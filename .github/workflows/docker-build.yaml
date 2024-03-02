@@ -1,0 +1,105 @@
+---
+######################################################################
+# Usage
+######################################################################
+# Prerequisites:
+#   * ./Dockerfile
+#
+# jobs:
+#   workflow:
+#     name: Build images
+#     uses: ./.github/workflows/docker-build.yaml
+#     with:
+#       folder: ./my-image
+#       image_name: my-image
+#       push: false
+#     secrets: inherit
+
+######################################################################
+# Workflow
+######################################################################
+name: Docker workflow
+
+on:
+  workflow_call:
+    inputs:
+      folder:
+        required: true
+        type: string
+      image_name:
+        required: true
+        type: string
+      push:
+        required: true
+        type: boolean
+        default: false
+
+# OIDC Connect
+permissions:
+  id-token: write # needed for OIDC Connect
+  packages: write # needed for ghcr access
+  contents: write # needed to write releases
+
+# Those env are static for this workflow
+env:
+  DOCKER_REPOSITORY_LOCATION: ghcr.io
+  DESTINATION: ghcr.io/javierlgroba/images/${{ inputs.image_name }}
+
+jobs:
+  build:
+    name: Build and push
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      ######################################################################
+      # Setup
+      ######################################################################
+      - uses: actions/checkout@v3
+      - uses: FranzDiebold/github-env-vars-action@v2
+      - name: set timestamp
+        id: vars
+        run: echo "timestamp=$(date +'%y%m%d%H%M%S')" >> $GITHUB_OUTPUT
+
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v2
+        with:
+          platforms: linux/arm64
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v2
+        with:
+          platforms: linux/arm64
+
+      ######################################################################
+      # Build Image
+      ######################################################################
+      - name: Check presence of Dockerfile
+        id: check_dockerfile
+        uses: andstor/file-existence-action@v2
+        with:
+          files: ${{ inputs.folder }}/dockerfile
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Image
+        uses: docker/build-push-action@v4
+        if: steps.check_dockerfile.outputs.files_exists == 'true'
+        with:
+          file: ./${{ inputs.folder }}/dockerfile
+          load: ${{ inputs.push == false }}
+          build-args: |
+            GITHUB_SHA=${{ github.sha }}
+          context: ./${{ inputs.folder }}
+          platforms: linux/arm64
+          tags: |
+            ${{ env.DESTINATION }}:latest
+            ${{ env.DESTINATION }}:${{ github.sha }}
+            ${{ env.DESTINATION }}:${{ env.CI_SHA_SHORT }}
+            ${{ env.DESTINATION }}:${{ env.CI_SHA_SHORT }}-${{ steps.vars.outputs.timestamp }}
+          # cache-from: type=registry,ref=${{ env.DESTINATION }}:latest
+          push: ${{ inputs.push }}
