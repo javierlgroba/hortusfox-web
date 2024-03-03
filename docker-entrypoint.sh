@@ -69,7 +69,7 @@ create_environment_file() {
     DB_DATABASE="$DB_DATABASE"
     DB_DRIVER=mysql
     DB_CHARSET="$DB_CHARSET"
-    
+
     # SMTP Settings
     SMTP_FROMNAME="$SMTP_FROMNAME"
     SMTP_FROMADDRESS="$SMTP_FROMADDRESS"
